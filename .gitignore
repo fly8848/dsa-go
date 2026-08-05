@@ -1,0 +1,21 @@
+# 构建产物
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+bin/
+dist/
+
+# 测试与临时文件
+*.tmp
+*.log
+.DS_Store
+Thumbs.db
+
+# IDE 与编辑器
+.idea/
+.vscode/
+*.swp
