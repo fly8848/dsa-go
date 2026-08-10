@@ -10,7 +10,7 @@ import (
 // ① size 与"从头可遍历的节点数"恒等；② 任意操作后 Traverse 与操作序列一致；
 // ③ 链有终点（无环无断链）；④ 越界操作不改变链表。
 // 测试通过公开 API 操作，用 Traverse + Len 验证结果（它们就是链表结构的镜像，
-// 不需要直接摸内部字段）。
+// 除 TestNew 的初始化检查外，不直接摸内部字段）。
 
 // TestNew 验证创建：空链表 size 为 0、sentinel.Next 为 nil（无真实节点）。
 // 越界/未找到等行为归各自方法的测试（TestDelete/TestSearch），不在此重复。
@@ -32,8 +32,7 @@ func TestNew(t *testing.T) {
 func TestInsert(t *testing.T) {
 	l := New()
 
-	size := 4
-	for i := 0; i < size; i++ {
+	for i := 0; i < 4; i++ {
 		l.Insert(i, i)
 	}
 
@@ -41,27 +40,18 @@ func TestInsert(t *testing.T) {
 	if err == nil {
 		t.Errorf("Insert(-1, -1) 应返回 ErrIndexOutOfRange, 实际为 nil")
 	}
-	err = l.Insert(size+1, -1)
+	err = l.Insert(l.Len()+1, -1)
 	if err == nil {
-		t.Errorf("Insert(size+1=%d, -1) 应返回 ErrIndexOutOfRange, 实际为 nil", size+1)
+		t.Errorf("Insert(Len()+1=%d, -1) 应返回 ErrIndexOutOfRange, 实际为 nil", l.Len()+1)
 	}
 
-	traverseRes := l.Traverse()
-	res := []int{0, 1, 2, 3}
-	if !slices.Equal(traverseRes, res) {
-		t.Errorf("Traverse() = %v, 期望 %v", traverseRes, res)
-	}
+	assertTraverse(t, l, []int{0, 1, 2, 3})
 
 	l.Insert(0, 5)
 	l.Insert(3, 6)
 	l.Insert(6, 7)
 
-	traverseRes = l.Traverse()
-	res = []int{5, 0, 1, 6, 2, 3, 7}
-
-	if !slices.Equal(traverseRes, res) {
-		t.Errorf("Traverse() = %v, 期望 %v", traverseRes, res)
-	}
+	assertTraverse(t, l, []int{5, 0, 1, 6, 2, 3, 7})
 }
 
 // TestDelete 验证顺序与返回值：删头、删中间、删尾，返回值分别正确、遍历无空洞；
@@ -70,8 +60,7 @@ func TestInsert(t *testing.T) {
 func TestDelete(t *testing.T) {
 	l := New()
 
-	size := 4
-	for i := 0; i < size; i++ {
+	for i := 0; i < 4; i++ {
 		l.Insert(i, i)
 	}
 
@@ -79,9 +68,9 @@ func TestDelete(t *testing.T) {
 	if err == nil {
 		t.Errorf("Delete(-1) 应返回 ErrIndexOutOfRange, 实际为 nil")
 	}
-	_, err = l.Delete(size + 1)
+	_, err = l.Delete(l.Len() + 1)
 	if err == nil {
-		t.Errorf("Delete(size+1=%d) 应返回 ErrIndexOutOfRange, 实际为 nil", size+1)
+		t.Errorf("Delete(Len()+1=%d) 应返回 ErrIndexOutOfRange, 实际为 nil", l.Len()+1)
 	}
 
 	v, _ := l.Delete(0)
@@ -97,55 +86,54 @@ func TestDelete(t *testing.T) {
 		t.Errorf("Delete(1) 返回值 = %d, 期望 3", v)
 	}
 
-	traverseRes := l.Traverse()
-	res := []int{1}
-
-	if !slices.Equal(traverseRes, res) {
-		t.Errorf("Traverse() = %v, 期望 %v", traverseRes, res)
-	}
+	assertTraverse(t, l, []int{1})
 
 	v, _ = l.Delete(0)
 	if v != 1 {
 		t.Errorf("Delete(0)（删唯一节点）返回值 = %d, 期望 1", v)
 	}
-	traverseRes = l.Traverse()
-	res = make([]int, 0)
-
-	if !slices.Equal(traverseRes, res) {
-		t.Errorf("Traverse() = %v, 期望 %v", traverseRes, res)
-	}
+	assertTraverse(t, l, []int{})
 }
 
 // TestSearch 验证查找语义：命中返回第一个匹配的下标（重复值取最小下标）；
 // 未命中返回 ErrNotFound；空表搜索同样返回 ErrNotFound
 func TestSearch(t *testing.T) {
-	l := New()
-	_, err := l.Search(-1)
-	if err == nil {
-		t.Errorf("Search(-1) 应返回 ErrNotFound, 实际为 nil")
+	// 空表搜索：任何值都未命中
+	_, err := New().Search(1)
+	if err != ErrNotFound {
+		t.Errorf("空表 Search(1) 错误 = %v, 期望 ErrNotFound", err)
 	}
 
-	size := 5
-	for i := 0; i < size; i++ {
+	// 构造 [0,1,2,3,4,4]，含重复值
+	l := New()
+	for i := 0; i < 5; i++ {
 		l.Insert(i, i)
 	}
-
-	_, err = l.Search(-1)
-	if err == nil {
-		t.Errorf("Search(-1) 应返回 ErrNotFound, 实际为 nil")
-	}
-	_, err = l.Search(6)
-	if err == nil {
-		t.Errorf("Search(6) 应返回 ErrNotFound, 实际为 nil")
-	}
-
 	l.Insert(5, 4)
-	v, err := l.Search(4)
-	if err != nil {
-		t.Errorf("Search(4) 返回错误: %v", err)
+
+	tests := []struct {
+		name string
+		val  int
+		want int
+		err  error
+	}{
+		{"头节点命中", 0, 0, nil},
+		{"中间命中", 3, 3, nil},
+		{"重复值取最小下标", 4, 4, nil},
+		{"未命中(小于最小值)", -1, -1, ErrNotFound},
+		{"未命中(大于最大值)", 6, -1, ErrNotFound},
 	}
-	if v != 4 {
-		t.Errorf("Search(4) 返回下标 = %d, 期望 4", v)
+
+	for _, tt := range tests {
+		got, err := l.Search(tt.val)
+		if err != tt.err {
+			t.Errorf("%s: Search(%d) 错误 = %v, 期望 %v", tt.name, tt.val, err, tt.err)
+			continue
+		}
+		// 未命中时下标是零值（无意义），只在命中 case 校验下标
+		if tt.err == nil && got != tt.want {
+			t.Errorf("%s: Search(%d) 下标 = %d, 期望 %d", tt.name, tt.val, got, tt.want)
+		}
 	}
 }
 
@@ -166,9 +154,16 @@ func TestTraverse(t *testing.T) {
 		l.Insert(i, i+1)
 	}
 
-	traverseRes = l.Traverse()
-	if !slices.Equal(traverseRes, []int{1, 2, 3, 4, 5}) {
-		t.Errorf("Traverse() = %v, 期望 [1 2 3 4 5]", traverseRes)
+	assertTraverse(t, l, []int{1, 2, 3, 4, 5})
+}
+
+// assertTraverse 断言 Traverse 结果与期望一致。
+// t.Helper()：断言失败时错误信息定位到调用方所在行，而不是本函数内部。
+func assertTraverse(t *testing.T, l *LinkedList, want []int) {
+	t.Helper()
+	got := l.Traverse()
+	if !slices.Equal(got, want) {
+		t.Errorf("Traverse() = %v, 期望 %v", got, want)
 	}
 }
 
